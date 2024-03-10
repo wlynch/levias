@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+spec:
+  containers:
+    - name: run
+      image: ko://github.com/wlynch/levias/client
+      args: ["run", "cgr.dev/chainguard/bash", "echo hello"]
+      env:
+        - name: LEVIAS_URL
+          value: "http://levias-server.default.svc.cluster.local"

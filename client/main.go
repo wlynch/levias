@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/wlynch/levias/pkg/token"
 	"golang.org/x/oauth2"
 )
 
@@ -35,7 +36,7 @@ func main() {
 	fmt.Fprintln(os.Stderr, "starting levias proxy on", l.Addr())
 
 	transport := http.DefaultTransport
-	ts := &fileTokenSource{path: getenv("LEVIAS_TOKEN_PATH", defaultTokenPath)}
+	ts := token.NewFileTokenSource(getenv("LEVIAS_TOKEN_PATH", defaultTokenPath))
 	if token, err := ts.Token(); err != nil {
 		fmt.Fprintln(os.Stderr, "unable to read token, falling back to no credentials:", err)
 	} else {
@@ -70,18 +71,4 @@ func getenv(name, defaultVal string) string {
 		return v
 	}
 	return defaultVal
-}
-
-type fileTokenSource struct {
-	path string
-}
-
-func (f *fileTokenSource) Token() (*oauth2.Token, error) {
-	b, err := os.ReadFile(f.path)
-	if err != nil {
-		return nil, err
-	}
-	return &oauth2.Token{
-		AccessToken: string(b),
-	}, nil
 }
