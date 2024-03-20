@@ -3,6 +3,7 @@ kind: Pod
 metadata:
   name: client
 spec:
+  restartPolicy: Never
   containers:
     - name: run
       image: ko://github.com/wlynch/levias/client
