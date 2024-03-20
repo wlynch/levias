@@ -42,7 +42,10 @@ func main() {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
-	verifier, err := NewVerifier(configureHTTP(ctx), "https://kubernetes.default.svc.cluster.local", "https://kubernetes.default.svc/openid/v1/jwks")
+	ts := token.NewFileTokenSource("/var/run/secrets/kubernetes.io/serviceaccount/token")
+	// Load cluster authenticated client
+	client := internalClient(ts)
+	verifier, err := NewVerifierFromToken(ctx, client, ts)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,8 +60,7 @@ func main() {
 	}
 }
 
-// configure an http client that can talk to the Kubernetes API.
-func configureHTTP(ctx context.Context) context.Context {
+func internalClient(ts oauth2.TokenSource) *http.Client {
 	// Add the Kubernetes cluster's CA to the system CA pool, and to
 	// the default transport.
 	rootCAs, _ := x509.SystemCertPool()
@@ -72,14 +74,14 @@ func configureHTTP(ctx context.Context) context.Context {
 	if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
 		log.Println("No certs appended, using system certs only")
 	}
+
 	base := http.DefaultTransport.(*http.Transport).Clone()
 	base.TLSClientConfig.RootCAs = rootCAs
 
-	ts := token.NewFileTokenSource("/var/run/secrets/kubernetes.io/serviceaccount/token")
-	t := &oauth2.Transport{
-		Source: ts,
-		Base:   base,
+	return &http.Client{
+		Transport: &oauth2.Transport{
+			Source: ts,
+			Base:   base,
+		},
 	}
-
-	return context.WithValue(ctx, oauth2.HTTPClient, &http.Client{Transport: t})
 }
