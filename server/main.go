@@ -9,7 +9,12 @@ import (
 	"net/http/httputil"
 	"os"
 
-	"github.com/gorilla/mux"
+	"github.com/docker/docker/api/server"
+	"github.com/docker/docker/api/server/middleware"
+	"github.com/docker/docker/api/server/router/container"
+	"github.com/docker/docker/api/server/router/system"
+	"github.com/docker/docker/runconfig"
+	"github.com/sirupsen/logrus"
 	"github.com/wlynch/levias/pkg/token"
 	"golang.org/x/oauth2"
 	"k8s.io/client-go/kubernetes"
@@ -18,6 +23,8 @@ import (
 
 func main() {
 	ctx := context.Background()
+
+	logrus.SetLevel(logrus.DebugLevel)
 
 	// use the current context in kubeconfig
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(clientcmd.NewDefaultClientConfigLoadingRules(), nil).ClientConfig()
@@ -30,7 +37,39 @@ func main() {
 	}
 	clientset.RESTClient()
 
-	r := mux.NewRouter()
+	ts := token.NewFileTokenSource("/var/run/secrets/kubernetes.io/serviceaccount/token")
+	// Load cluster authenticated client
+	client := internalClient(ts)
+	verifier, err := NewVerifierFromToken(ctx, client, ts)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	/*
+		srv := &Server{
+			client:   clientset,
+			verifier: verifier,
+		}
+		addRoutes(r, srv)
+	*/
+
+	b := &Backend{
+		client:   clientset,
+		verifier: verifier,
+	}
+	s := &server.Server{}
+	vm, err := middleware.NewVersionMiddleware("1.45", "1.45", "1.45")
+	if err != nil {
+		log.Fatalf("failed to create version middleware: %v", err)
+	}
+	s.UseMiddleware(&logmiddleware{})
+	s.UseMiddleware(vm)
+	s.UseMiddleware(&AuthMiddleware{verifier: verifier})
+	r := s.CreateMux(
+		system.NewRouter(b, b, nil, func() map[string]bool { return map[string]bool{} }),
+		container.NewRouter(b, runconfig.ContainerDecoder{}, false /* cgroup2 */),
+		//grpc.NewRouter(b),
+	)
 	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := httputil.DumpRequest(r, true)
 		if err != nil {
@@ -41,19 +80,6 @@ func main() {
 
 		w.WriteHeader(http.StatusNotFound)
 	})
-
-	ts := token.NewFileTokenSource("/var/run/secrets/kubernetes.io/serviceaccount/token")
-	// Load cluster authenticated client
-	client := internalClient(ts)
-	verifier, err := NewVerifierFromToken(ctx, client, ts)
-	if err != nil {
-		log.Fatal(err)
-	}
-	srv := &Server{
-		client:   clientset,
-		verifier: verifier,
-	}
-	addRoutes(r, srv)
 
 	if err := http.ListenAndServe(":8080", r); err != nil {
 		panic(err)
@@ -83,5 +109,16 @@ func internalClient(ts oauth2.TokenSource) *http.Client {
 			Source: ts,
 			Base:   base,
 		},
+	}
+}
+
+type logmiddleware struct{}
+
+func (l *logmiddleware) WrapHandler(handler func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error) func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+		fmt.Println(r.Method, r.URL)
+		err := handler(ctx, w, r, vars)
+		fmt.Println(r.URL, err)
+		return err
 	}
 }

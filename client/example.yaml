@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: client
+  name: client-billy
 spec:
   restartPolicy: Never
   containers:
@@ -11,3 +11,10 @@ spec:
       env:
         - name: LEVIAS_URL
           value: "http://levias-server.default.svc.cluster.local"
+    # - name: build
+    #   image: ko://github.com/wlynch/levias/client
+    #   command: ["sh"]
+    #   args: ["-c", 'echo "FROM scratch" | client build -']
+    #   env:
+    #     - name: LEVIAS_URL
+    #       value: "http://levias-server.default.svc.cluster.local"

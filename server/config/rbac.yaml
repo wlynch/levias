@@ -17,7 +17,7 @@ metadata:
   name: levias-server
 rules:
   - apiGroups: [""]
-    resources: ["pods"]
+    resources: ["pods", "pods/log"]
     verbs: ["get", "watch", "list"]
   - apiGroups: [""]
     resources: ["pods/attach", "pods/ephemeralcontainers", "pods/exec"]

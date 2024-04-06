@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultURL       = "http://levias.tekton-pipelines.svc.cluster.local"
+	defaultURL       = "http://levias.default.svc.cluster.local"
 	defaultTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 )
 
@@ -33,7 +33,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Fprintln(os.Stderr, "starting levias proxy on", l.Addr())
+	fmt.Fprintln(os.Stderr, "starting levias proxy on", l.Addr(), "->", url.String())
 
 	transport := http.DefaultTransport
 	ts := token.NewFileTokenSource(getenv("LEVIAS_TOKEN_PATH", defaultTokenPath))
@@ -44,9 +44,12 @@ func main() {
 			Source: oauth2.StaticTokenSource(token),
 		}
 	}
+	//transport = &logtransport{base: transport}
+
 	srv := &http.Server{
 		Handler: &httputil.ReverseProxy{
 			Rewrite: func(r *httputil.ProxyRequest) {
+				//fmt.Println(r.In.Method, r.In.URL)
 				r.SetURL(url)
 			},
 			Transport: transport,
@@ -63,6 +66,11 @@ func main() {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Run()
+
+	// Flush stdout/stderr to make sure everything is printed before we exit.
+	os.Stdout.Sync()
+	os.Stderr.Sync()
+
 	os.Exit(cmd.ProcessState.ExitCode())
 }
 
@@ -71,4 +79,25 @@ func getenv(name, defaultVal string) string {
 		return v
 	}
 	return defaultVal
+}
+
+type logtransport struct {
+	base http.RoundTripper
+}
+
+func (t *logtransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if rawreq, err := httputil.DumpRequest(req, true); err == nil {
+		fmt.Println(string(rawreq))
+	}
+
+	resp, err := t.base.RoundTrip(req)
+	if err == nil {
+		// This might cause issues on attachments since the reverse proxy doesn't like the
+		// HTTP upgrade. It's not really an error though.
+		if rawresp, err := httputil.DumpResponse(resp, true); err == nil {
+			fmt.Println(string(rawresp))
+		}
+	}
+
+	return resp, err
 }
