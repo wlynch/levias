@@ -5,16 +5,16 @@ metadata:
 spec:
   restartPolicy: Never
   containers:
-    - name: run
-      image: ko://github.com/wlynch/levias/client
-      args: ["run", "cgr.dev/chainguard/bash", "echo hello"]
-      env:
-        - name: LEVIAS_URL
-          value: "http://levias-server.default.svc.cluster.local"
-    # - name: build
+    # - name: run
     #   image: ko://github.com/wlynch/levias/client
-    #   command: ["sh"]
-    #   args: ["-c", 'echo "FROM scratch" | client build -']
+    #   args: ["run", "cgr.dev/chainguard/bash", "echo hello"]
     #   env:
     #     - name: LEVIAS_URL
     #       value: "http://levias-server.default.svc.cluster.local"
+    - name: build
+      image: ko://github.com/wlynch/levias/client
+      command: ["sh"]
+      args: ["-c", 'echo "FROM scratch" | client build -; sleep 600']
+      env:
+        - name: LEVIAS_URL
+          value: "http://levias-server.default.svc.cluster.local"

@@ -15,6 +15,7 @@ import (
 	systypes "github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/errdefs"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 var (
@@ -25,6 +26,7 @@ type Backend struct {
 	system.Backend
 	system.ClusterBackend
 
+	config   *rest.Config
 	client   *kubernetes.Clientset
 	verifier *Verifier
 }

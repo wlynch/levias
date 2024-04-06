@@ -44,7 +44,7 @@ func main() {
 			Source: oauth2.StaticTokenSource(token),
 		}
 	}
-	//transport = &logtransport{base: transport}
+	transport = &logtransport{base: transport}
 
 	srv := &http.Server{
 		Handler: &httputil.ReverseProxy{

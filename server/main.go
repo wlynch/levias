@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os"
+	"strings"
 
 	"github.com/docker/docker/api/server"
 	"github.com/docker/docker/api/server/middleware"
@@ -54,6 +55,7 @@ func main() {
 	*/
 
 	b := &Backend{
+		config:   config,
 		client:   clientset,
 		verifier: verifier,
 	}
@@ -63,8 +65,10 @@ func main() {
 		log.Fatalf("failed to create version middleware: %v", err)
 	}
 	s.UseMiddleware(&logmiddleware{})
+	s.UseMiddleware(&nameTransform{})
 	s.UseMiddleware(vm)
 	s.UseMiddleware(&AuthMiddleware{verifier: verifier})
+
 	r := s.CreateMux(
 		system.NewRouter(b, b, nil, func() map[string]bool { return map[string]bool{} }),
 		container.NewRouter(b, runconfig.ContainerDecoder{}, false /* cgroup2 */),
@@ -120,5 +124,25 @@ func (l *logmiddleware) WrapHandler(handler func(ctx context.Context, w http.Res
 		err := handler(ctx, w, r, vars)
 		fmt.Println(r.URL, err)
 		return err
+	}
+}
+
+// This is a big hack because moby backend API isn't consistent about plumbing through contexts.
+// This ensures that names always have the same scheme when needed.
+type nameTransform struct{}
+
+func (l *nameTransform) WrapHandler(handler func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error) func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+		name, ok := vars["name"]
+		if ok {
+			if len(strings.Split(name, ".")) < 3 {
+				ns, pod, err := getPod(ctx)
+				if err != nil {
+					return err
+				}
+				vars["name"] = strings.Join([]string{ns, pod, name}, ".")
+			}
+		}
+		return handler(ctx, w, r, vars)
 	}
 }

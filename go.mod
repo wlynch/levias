@@ -7,8 +7,10 @@ require (
 	github.com/docker/docker v26.0.0+incompatible
 	github.com/gorilla/mux v1.8.0
 	github.com/moby/moby v26.0.0+incompatible
+	github.com/sirupsen/logrus v1.9.3
 	gocloud.dev v0.37.0
 	golang.org/x/oauth2 v0.18.0
+	google.golang.org/grpc v1.63.0
 	k8s.io/api v0.28.1
 	k8s.io/apimachinery v0.28.1
 	k8s.io/client-go v0.28.1
@@ -111,6 +113,7 @@ require (
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect
 	github.com/moby/pubsub v1.0.0 // indirect
+	github.com/moby/spdystream v0.2.0 // indirect
 	github.com/moby/swarmkit/v2 v2.0.0-20240227173239-911c97650f2e // indirect
 	github.com/moby/sys/mount v0.3.3 // indirect
 	github.com/moby/sys/mountinfo v0.7.1 // indirect
@@ -139,7 +142,6 @@ require (
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.4.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spdx/tools-golang v0.5.3 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tonistiigi/fsutil v0.0.0-20240301111122-7525a1af2bb5 // indirect
@@ -185,7 +187,6 @@ require (
 	google.golang.org/genproto v0.0.0-20240311173647-c811ad7063a7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240311173647-c811ad7063a7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240311173647-c811ad7063a7 // indirect
-	google.golang.org/grpc v1.63.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

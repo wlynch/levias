@@ -13,6 +13,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
 func (b *Backend) ContainerExecCreate(name string, config *types.ExecConfig) (string, error) {
@@ -60,7 +62,34 @@ func (b *Backend) ContainerExecInspect(id string) (*backend.ExecInspect, error) 
 func (b *Backend) ContainerExecResize(name string, height, width int) error { return ErrUnimplemented }
 
 func (b *Backend) ContainerExecStart(ctx context.Context, name string, options container.ExecStartOptions) error {
+	s := strings.Split(name, ".")
+	if len(s) != 3 {
+		return fmt.Errorf("invalid container name %q", name)
+	}
+	ns, pod, container := s[0], s[1], s[2]
+
+	fmt.Println("$", ns, pod, container)
+
+	req := b.client.CoreV1().RESTClient().Post().Resource("pods").Name(pod).Namespace(ns).SubResource("exec")
+	req.VersionedParams(&corev1.PodExecOptions{
+		Container: container,
+		Stdin:     options.Stdin != nil,
+		Stdout:    options.Stdout != nil,
+		Stderr:    options.Stderr != nil,
+	}, scheme.ParameterCodec)
+	exec, err := remotecommand.NewSPDYExecutor(b.config, "POST", req.URL())
+	if err != nil {
+		return err
+	}
+	if err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin:  options.Stdin,
+		Stdout: options.Stdout,
+		Stderr: options.Stderr,
+	}); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (b *Backend) ExecExists(name string) (bool, error) { return false, ErrUnimplemented }
+func (b *Backend) ExecExists(name string) (bool, error) { return true, nil }
