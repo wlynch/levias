@@ -73,10 +73,12 @@ func (b *Backend) ContainerExecStart(ctx context.Context, name string, options c
 	req := b.client.CoreV1().RESTClient().Post().Resource("pods").Name(pod).Namespace(ns).SubResource("exec")
 	req.VersionedParams(&corev1.PodExecOptions{
 		Container: container,
+		Command:   []string{"buildctl", "dial-stdio"},
 		Stdin:     options.Stdin != nil,
 		Stdout:    options.Stdout != nil,
 		Stderr:    options.Stderr != nil,
 	}, scheme.ParameterCodec)
+	fmt.Println(req.URL())
 	exec, err := remotecommand.NewSPDYExecutor(b.config, "POST", req.URL())
 	if err != nil {
 		return err
