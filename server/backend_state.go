@@ -28,7 +28,10 @@ func getPod(ctx context.Context) (string, string, error) {
 }
 
 func (b *Backend) ContainerCreate(ctx context.Context, config backend.ContainerCreateConfig) (container.CreateResponse, error) {
-	json.NewEncoder(os.Stdout).Encode(config)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	json.NewEncoder(os.Stderr).Encode(config)
 
 	ns, podName, err := getPod(ctx)
 	if err != nil {
@@ -81,7 +84,8 @@ func (b *Backend) ContainerRestart(ctx context.Context, name string, options con
 }
 
 func (b *Backend) ContainerRm(name string, config *backend.ContainerRmConfig) error {
-	return ErrUnimplemented
+
+	return nil
 }
 
 func (b *Backend) ContainerStart(ctx context.Context, name string, checkpoint string, checkpointDir string) error {
@@ -105,19 +109,24 @@ func (b *Backend) ContainerWait(ctx context.Context, name string, condition cont
 	if len(s) != 3 {
 		return nil, fmt.Errorf("invalid container name %q", name)
 	}
-	ns, pod, name := s[0], s[1], s[2]
+	ns, pod, container := s[0], s[1], s[2]
 
 	state := containerpkg.NewState()
 
 	go func() {
-		s, err := b.waitForReady(ctx, ns, pod, name)
+		s, err := b.waitForReady(ctx, ns, pod, container)
 		if err != nil {
 			return
 		}
-		state.SetStopped(&containerpkg.ExitStatus{
-			ExitCode: int(s.State.Terminated.ExitCode),
-			ExitedAt: s.State.Terminated.FinishedAt.Time,
-		})
+		if s.State.Terminated != nil {
+			state.SetStopped(&containerpkg.ExitStatus{
+				ExitCode: int(s.State.Terminated.ExitCode),
+				ExitedAt: s.State.Terminated.FinishedAt.Time,
+			})
+		}
+		if s.State.Running != nil {
+			state.SetRunning(nil, nil, true)
+		}
 	}()
 
 	return state.Wait(ctx, condition), nil

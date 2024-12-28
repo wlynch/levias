@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -11,64 +12,141 @@ import (
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
 )
 
+var (
+	// TODO: make this a TTL cache
+	state = map[string]*ExecState{}
+)
+
+type ExecState struct {
+	cfg *types.ExecConfig
+
+	running  bool
+	exitCode *int
+}
+
 func (b *Backend) ContainerExecCreate(name string, config *types.ExecConfig) (string, error) {
-	ctx := context.TODO()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	//ctx := context.TODO()
 
 	fmt.Println(name)
 	json.NewEncoder(os.Stdout).Encode(config)
 
-	s := strings.Split(name, ".")
-	if len(s) != 3 {
-		return "", fmt.Errorf("invalid container name %q", name)
-	}
-	ns, podName, image := s[0], s[1], s[2]
-	if image == "buildx_buildkit_default" {
-		image = "moby/buildkit"
+	/*
+		s := strings.Split(name, ".")
+		if len(s) != 3 {
+			return "", fmt.Errorf("invalid container name %q", name)
+		}
+
+			_, _, image := s[0], s[1], s[2]
+			if image == "buildx_buildkit_default" {
+				image = "moby/buildkit"
+			}
+	*/
+
+	/*
+		pod, err := b.client.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			return "", err
+		}
+			ec := corev1.EphemeralContainer{
+				EphemeralContainerCommon: corev1.EphemeralContainerCommon{
+					Name:  fmt.Sprintf("levias-%s", rand.String(8)),
+					Image: image,
+					Args:  config.Cmd,
+				},
+			}
+			pod.Spec.EphemeralContainers = append(pod.Spec.EphemeralContainers, ec)
+
+			out, err := b.client.CoreV1().Pods(ns).UpdateEphemeralContainers(ctx, podName, pod, metav1.UpdateOptions{})
+			if err != nil {
+				return "", err
+			}
+
+			return strings.Join([]string{out.Namespace, out.Name, ec.Name}, "."), nil
+	*/
+
+	id := fmt.Sprintf("%s.%s", name, rand.String(8))
+	state[id] = &ExecState{
+		cfg: config,
 	}
 
-	pod, err := b.client.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
-	if err != nil {
-		return "", err
-	}
-
-	ec := corev1.EphemeralContainer{
-		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
-			Name:  fmt.Sprintf("levias-%s", rand.String(8)),
-			Image: image,
-			Args:  config.Cmd,
-		},
-	}
-	pod.Spec.EphemeralContainers = append(pod.Spec.EphemeralContainers, ec)
-
-	out, err := b.client.CoreV1().Pods(ns).UpdateEphemeralContainers(ctx, podName, pod, metav1.UpdateOptions{})
-	if err != nil {
-		return "", err
-	}
-
-	return strings.Join([]string{out.Namespace, out.Name, ec.Name}, "."), nil
-
+	return id, nil
 }
 
 func (b *Backend) ContainerExecInspect(id string) (*backend.ExecInspect, error) {
-	return nil, ErrUnimplemented
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	//ctx := context.TODO()
+
+	s, ok := state[id]
+	if !ok {
+		return nil, fmt.Errorf("exec config not found for %q", id)
+	}
+	return &backend.ExecInspect{
+		ID:       id,
+		ExitCode: s.exitCode,
+		Running:  false,
+	}, nil
+
+	/*
+		s := strings.Split(id, ".")
+		if len(s) != 4 {
+			return nil, fmt.Errorf("invalid container name %q", id)
+		}
+		ns, podName, image, _ := s[0], s[1], s[2], s[3]
+
+		pod, err := b.client.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ec := range pod.Status.EphemeralContainerStatuses {
+			fmt.Println("@@@", ec.Name, image)
+			if ec.Name == image {
+				var exitCode *int
+				if ec.State.Terminated != nil {
+					i := int(ec.State.Terminated.ExitCode)
+					exitCode = &i
+				}
+				return &backend.ExecInspect{
+					Running:     *ec.Started,
+					ID:          id,
+					ExitCode:    exitCode,
+					ContainerID: ec.ContainerID,
+				}, nil
+			}
+		}
+		return nil, fmt.Errorf("ephemeral container %q not found", image)
+	*/
 }
 
 func (b *Backend) ContainerExecResize(name string, height, width int) error { return ErrUnimplemented }
 
 func (b *Backend) ContainerExecStart(ctx context.Context, name string, options container.ExecStartOptions) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	log.Println("ContainerExecStart", name)
 	s := strings.Split(name, ".")
-	if len(s) != 3 {
+	if len(s) != 4 {
 		return fmt.Errorf("invalid container name %q", name)
 	}
-	ns, pod, container := s[0], s[1], s[2]
+	ns, pod, container, execID := s[0], s[1], s[2], s[3]
 
-	fmt.Println("$", ns, pod, container)
+	fmt.Println("$", ns, pod, container, execID)
+
+	state, ok := state[name]
+	if !ok {
+		return fmt.Errorf("exec config not found for %q", name)
+	}
 
 	req := b.client.CoreV1().RESTClient().Post().Resource("pods").Name(pod).Namespace(ns).SubResource("exec")
 	req.VersionedParams(&corev1.PodExecOptions{
@@ -76,6 +154,7 @@ func (b *Backend) ContainerExecStart(ctx context.Context, name string, options c
 		Stdin:     options.Stdin != nil,
 		Stdout:    options.Stdout != nil,
 		Stderr:    options.Stderr != nil,
+		Command:   state.cfg.Cmd,
 	}, scheme.ParameterCodec)
 	exec, err := remotecommand.NewSPDYExecutor(b.config, "POST", req.URL())
 	if err != nil {
@@ -86,6 +165,9 @@ func (b *Backend) ContainerExecStart(ctx context.Context, name string, options c
 		Stdout: options.Stdout,
 		Stderr: options.Stderr,
 	}); err != nil {
+		// TODO: can we grab the exit code from the exec status?
+		i := 1
+		state.exitCode = &i
 		return err
 	}
 

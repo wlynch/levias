@@ -9,14 +9,18 @@ import (
 	"net/http/httputil"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/docker/docker/api/server"
 	"github.com/docker/docker/api/server/middleware"
 	"github.com/docker/docker/api/server/router/container"
+	"github.com/docker/docker/api/server/router/image"
 	"github.com/docker/docker/api/server/router/system"
 	"github.com/docker/docker/runconfig"
 	"github.com/sirupsen/logrus"
 	"github.com/wlynch/levias/pkg/token"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"golang.org/x/oauth2"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -55,6 +59,7 @@ func main() {
 	*/
 
 	b := &Backend{
+		mu:       new(sync.RWMutex),
 		config:   config,
 		client:   clientset,
 		verifier: verifier,
@@ -72,10 +77,11 @@ func main() {
 	r := s.CreateMux(
 		system.NewRouter(b, b, nil, func() map[string]bool { return map[string]bool{} }),
 		container.NewRouter(b, runconfig.ContainerDecoder{}, false /* cgroup2 */),
+		image.NewRouter(b, nil, nil, nil, nil),
 		//grpc.NewRouter(b),
 	)
 	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, err := httputil.DumpRequest(r, true)
+		raw, err := httputil.DumpRequest(r, false)
 		if err != nil {
 			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 			return
@@ -85,7 +91,9 @@ func main() {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
-	if err := http.ListenAndServe(":8080", r); err != nil {
+	h2s := &http2.Server{}
+
+	if err := http.ListenAndServe(":8080", h2c.NewHandler(r, h2s)); err != nil {
 		panic(err)
 	}
 }

@@ -1,1 +1,2 @@
-defaultBaseImage: docker
+# generated from base.apko.yaml - needed to have the tools we need on the base image.
+defaultBaseImage: gcr.io/wlynch-chainguard/levias-base

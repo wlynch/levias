@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/server/router/system"
@@ -26,6 +27,7 @@ type Backend struct {
 	system.Backend
 	system.ClusterBackend
 
+	mu       *sync.RWMutex
 	config   *rest.Config
 	client   *kubernetes.Clientset
 	verifier *Verifier

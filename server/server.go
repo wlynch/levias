@@ -151,6 +151,7 @@ func (s *Server) handleContainersExec(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExecContainersStart(w http.ResponseWriter, r *http.Request) {
+
 	fmt.Println(r.URL.Path)
 
 	raw, err := httputil.DumpRequest(r, true)

@@ -10,6 +10,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/archive"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func (b *Backend) ContainerChanges(ctx context.Context, name string) ([]archive.Change, error) {
@@ -39,5 +40,28 @@ func (b *Backend) ContainerTop(name string, psArgs string) (*container.Container
 	return nil, ErrUnimplemented
 }
 func (b *Backend) Containers(ctx context.Context, config *container.ListOptions) ([]*types.Container, error) {
-	return nil, ErrUnimplemented
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	ns, pod, err := getPod(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pods, err := b.client.CoreV1().Pods(ns).Get(ctx, pod, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*types.Container, 0, len(pods.Spec.EphemeralContainers))
+	for i, ec := range pods.Spec.EphemeralContainers {
+		status := pods.Status.EphemeralContainerStatuses[i]
+		out = append(out, &types.Container{
+			ID:      strings.Join([]string{ns, pod, ec.Name}, "."),
+			Names:   []string{ec.Name},
+			Image:   ec.Image,
+			State:   status.State.String(),
+			ImageID: status.ImageID,
+			Command: strings.Join(ec.Command, " "),
+		})
+	}
+	return out, nil
 }

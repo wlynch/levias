@@ -16,10 +16,13 @@ import (
 )
 
 func (b *Backend) ContainerAttach(name string, c *backend.ContainerAttachConfig) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	// y u no pass in context docker?
 	ctx := context.TODO()
 
-	json.NewEncoder(os.Stdout).Encode(c)
+	json.NewEncoder(os.Stderr).Encode(c)
 
 	s := strings.Split(name, ".")
 	if len(s) != 3 {
@@ -66,12 +69,18 @@ func (b *Backend) ContainerAttach(name string, c *backend.ContainerAttachConfig)
 		}
 	*/
 
-	_, err = io.Copy(stdout, podLogs)
+	if _, err = io.Copy(stdout, podLogs); err != nil {
+		fmt.Fprintln(stderr, "error writing logs: %v", err)
+	}
 	fmt.Println("done reading logs!")
+
 	return err
 }
 
 func (b *Backend) waitForReady(ctx context.Context, namespace, pod, container string) (*corev1.ContainerStatus, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if namespace == "" {
 		namespace = "default"
 	}
