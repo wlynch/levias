@@ -42,6 +42,7 @@ func (b *Backend) ImagesPrune(ctx context.Context, pruneFilters filters.Args) (*
 func (b *Backend) ImportImage(ctx context.Context, ref reference.Named, platform *v1.Platform, msg string, layerReader io.Reader, changes []string) (dockerimage.ID, error) {
 	return "", nil
 }
+
 func (b *Backend) LoadImage(ctx context.Context, inTar io.ReadCloser, outStream io.Writer, quiet bool) error {
 	return nil
 }

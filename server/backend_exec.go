@@ -7,11 +7,13 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
@@ -158,7 +160,31 @@ func (b *Backend) ContainerExecStart(ctx context.Context, name string, options c
 	}, scheme.ParameterCodec)
 	exec, err := remotecommand.NewSPDYExecutor(b.config, "POST", req.URL())
 	if err != nil {
-		return err
+		return fmt.Errorf("NewSPDYExecutor: %w", err)
+	}
+
+	running := false
+	for i := 0; i < 10; i++ {
+		time.Sleep(5 * time.Second)
+		if running {
+			break
+		}
+
+		pod, err := b.client.CoreV1().Pods(ns).Get(ctx, pod, metav1.GetOptions{})
+		if err != nil {
+			log.Println("Failed to get pod %s/%s: %v", ns, pod, err)
+			continue
+		}
+		for _, ec := range pod.Status.EphemeralContainerStatuses {
+			if ec.Name == container {
+				log.Printf("Ephemeral container %q status: %+v\n", container, ec.State)
+				running = ec.State.Running != nil
+				break
+			}
+		}
+	}
+	if !running {
+		return fmt.Errorf("ephemeral container %q not ready", container)
 	}
 	if err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:  options.Stdin,
@@ -168,7 +194,7 @@ func (b *Backend) ContainerExecStart(ctx context.Context, name string, options c
 		// TODO: can we grab the exit code from the exec status?
 		i := 1
 		state.exitCode = &i
-		return err
+		return fmt.Errorf("StreamWithContext: %w", err)
 	}
 
 	return nil
