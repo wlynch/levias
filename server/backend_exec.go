@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/backend"
@@ -15,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
 )
@@ -163,29 +163,18 @@ func (b *Backend) ContainerExecStart(ctx context.Context, name string, options c
 		return fmt.Errorf("NewSPDYExecutor: %w", err)
 	}
 
-	running := false
-	for i := 0; i < 10; i++ {
-		time.Sleep(5 * time.Second)
-		if running {
-			break
-		}
+	timeout := int64(60)
+	watcher, err := b.client.CoreV1().Pods(ns).Watch(ctx, metav1.ListOptions{
+		TimeoutSeconds: &timeout,
+		FieldSelector:  fmt.Sprintf("metadata.name=%s", pod),
+	})
+	defer watcher.Stop()
+	if ok, err := waitForEphemeralContainer(watcher, container); err != nil {
+		return fmt.Errorf("waitForEphemeralContainer: %w", err)
+	} else if !ok {
+		return fmt.Errorf("ephemeral container %q not running", container)
+	}
 
-		pod, err := b.client.CoreV1().Pods(ns).Get(ctx, pod, metav1.GetOptions{})
-		if err != nil {
-			log.Println("Failed to get pod %s/%s: %v", ns, pod, err)
-			continue
-		}
-		for _, ec := range pod.Status.EphemeralContainerStatuses {
-			if ec.Name == container {
-				log.Printf("Ephemeral container %q status: %+v\n", container, ec.State)
-				running = ec.State.Running != nil
-				break
-			}
-		}
-	}
-	if !running {
-		return fmt.Errorf("ephemeral container %q not ready", container)
-	}
 	if err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:  options.Stdin,
 		Stdout: options.Stdout,
@@ -198,6 +187,32 @@ func (b *Backend) ContainerExecStart(ctx context.Context, name string, options c
 	}
 
 	return nil
+}
+
+func waitForEphemeralContainer(watcher watch.Interface, container string) (bool, error) {
+	running := false
+	for event := range watcher.ResultChan() {
+		log.Println(event)
+		switch event.Type {
+		case watch.Added, watch.Modified:
+			pod := event.Object.(*corev1.Pod)
+			for _, ec := range pod.Status.EphemeralContainerStatuses {
+				if ec.Name == container {
+					log.Printf("Ephemeral container %q status: %+v\n", container, ec.State)
+					running = ec.State.Running != nil
+				}
+			}
+		case watch.Deleted:
+			return false, nil
+		case watch.Error:
+			fmt.Errorf("Unexpected error watching pod: %w", event)
+		}
+
+		if running {
+			return true, nil
+		}
+	}
+	return running, nil
 }
 
 func (b *Backend) ExecExists(name string) (bool, error) { return true, nil }

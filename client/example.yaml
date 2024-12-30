@@ -4,6 +4,7 @@ metadata:
   name: client-billy
 spec:
   restartPolicy: Never
+  runtimeClassName: gvisor
   containers:
     - name: run
       image: ko://github.com/wlynch/levias/client
